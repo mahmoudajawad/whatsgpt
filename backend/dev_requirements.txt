@@ -1,0 +1,10 @@
+black==22.10.0
+isort==5.10.1
+mypy==1.0.1
+mypy-extensions==0.4.3
+pylint==2.15.5
+pyls-isort==0.2.2
+pylsp-mypy==0.6.6
+python-lsp-black==1.2.1
+python-lsp-jsonrpc==1.0.0
+python-lsp-server==1.7.1
