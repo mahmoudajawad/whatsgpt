@@ -165,8 +165,8 @@ class WebhookEventMessageModel(ABC):
     Abstract base class to all WhatsApp webhook events messages
     """
 
-    @abstractmethod
     @property
+    @abstractmethod
     def timestamp(self):
         """
         Timestamp at which message was sent
