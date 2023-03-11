@@ -1,0 +1,14 @@
+[tool.pylint.basic]
+# Allow shorter and longer variable names than the default.
+argument-rgx = "[a-z_][a-z0-9_]*$"
+attr-rgx = "[a-z_][a-z0-9_]*$"
+variable-rgx = "[A-Z][A-Z0-9_]*$|[a-z_][a-z0-9_]*$"
+
+[[tool.mypy.overrides]]
+module = [
+    "bson",
+    "pymongo",
+    "pymongo.errors",
+    "motor.motor_asyncio",
+]
+ignore_missing_imports = true
