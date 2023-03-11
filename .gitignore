@@ -50,3 +50,7 @@ __pycache
 
 # VSTS
 .vs
+
+# Project specific
+# dotenv files for Backend
+/backend/.env*
