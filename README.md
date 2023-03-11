@@ -8,9 +8,9 @@ WhatsGPT is a Proof-of-Concept project to build a WhatsApp chat bot using offici
 
 Following serves as quick overview to project progress:
 
-- [ ] WhatsApp API Webhook:
-  - [ ] User should be able to send message to chat bot.
-  - [ ] User should receive an echo to message he sent.
+- [x] WhatsApp API Webhook:
+  - [x] User should be able to send message to chat bot.
+  - [x] User should receive an echo to message he sent.
 - [ ] GPT-3 Integration:
   - [ ] Rather than getting echo of the message, User should receive an answer as provided by GPT-3.
 - [ ] Realtime Data Integration:
