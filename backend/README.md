@@ -13,3 +13,7 @@ Backend would serve the following purposes:
 These are broad points at this stage and may change as needed, however, they are laid as roadmap for Backend.
 
 
+## Developing Backend
+
+Check [Contributing Guidelines](./CONTRIBUTING.md).
+
