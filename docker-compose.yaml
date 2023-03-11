@@ -1,0 +1,14 @@
+version: "3.6"
+
+services:
+  # Backend
+  backend:
+    image: backend
+    build: ./backend
+    environment:
+      - WHATSAPP_APP_ID
+      - WHATSAPP_API_TOKEN
+      - OPENAI_API_KEY
+    ports:
+      - ${PORT}:8080
+    restart: always
