@@ -4,6 +4,15 @@
 
 WhatsGPT is a Proof-of-Concept project to build a WhatsApp chat bot using official [WhatsApp API](https://business.whatsapp.com/developers/developer-hub). The bot would be powered by OpenAI GPT-3 to interpret messages sent to it, and fulfil it against realtime data that [Backend](./backend/README.md) module has access to.
 
+## How to Use
+
+Main component of the project is [Backend](./backend/README.md). To start it, you can choose one of the following three options:
+1. Start Backend from python directly: Follow [Contributing Guidelines](./backend/CONTRIBUTING.md) to create Python `venv` and install `requirements` only (it is safe to skip `dev_requirements`), set working directory to Backend, and start it using `python .`.
+2. Run docker image\*: Set working directory to Backend, build image using `docker build -t whatsgpt-backend .`, and run it with `docker run --rm -it whatsgpt-backend`.
+3. Run docker-compose\*: Set working directory to project root, and run docker-compose as `docker-compose up`. When done stop it with `docker-compose down`. If you have pulled updates to Backend, or you made your own, run it as `docker-compose up --build` to force rebuilding image of Backend.
+
+\* If you are using podman, you can follow the same steps as docker, docker-compose.
+
 ## Features To-do List
 
 Following serves as quick overview to project progress:
