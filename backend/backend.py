@@ -11,7 +11,8 @@ import os
 from aiohttp import web
 from dotenv import load_dotenv
 
-from endpoints import root_endpoint_handler, webhook_endpoint_handler
+from endpoints import (root_endpoint_handler, webhook_get_endpoint_handler,
+                       webhook_post_endpoint_handler)
 
 # Backend expects following env variables:
 # - PORT: If set it will be converted into `int` type to use as port number. If conversion failed,
@@ -44,7 +45,8 @@ def serve():
     app.add_routes(
         [
             web.get("/", root_endpoint_handler),
-            web.post("/webhook", webhook_endpoint_handler),
+            web.get("/webhook", webhook_get_endpoint_handler),
+            web.post("/webhook", webhook_post_endpoint_handler),
         ]
     )
     web.run_app(app, port=port)

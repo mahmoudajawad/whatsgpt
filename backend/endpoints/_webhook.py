@@ -2,21 +2,43 @@
 Endpoint '/webhook' handler and associated classes
 """
 
+import asyncio
 import logging
+import os
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
+import requests
 from aiohttp.web import Response
 
 if TYPE_CHECKING:
     from aiohttp.web import Request
 
 
-async def webhook_endpoint_handler(request: "Request") -> "Response":
+async def webhook_get_endpoint_handler(request: "Request") -> "Response":
     """
-    Handler for webhook endpoint. Serves as starting point to analysing webhook event and action to
-    take on. NOT SUPPOSED TO BE INVOKED OUTSIDE OF AIOHTTP CONTEXT
+    Handler for webhook GET endpoint. Used by WhatsApp API for verification purposes. NOT SUPPOSED
+    TO BE INVOKED OUTSIDE OF AIOHTTP CONTEXT
+    """
+
+    hub_mode = request.query["hub.mode"]
+    hub_challenge = request.query["hub.challenge"]
+    hub_token = request.query["hub.verify_token"]
+
+    if hub_token != "token":
+        return Response(status=403, text="Invalid token")
+
+    if hub_mode != "subscribe":
+        return Response(status=400, text="Unknwon hub.mode")
+
+    return Response(text=hub_challenge)
+
+
+async def webhook_post_endpoint_handler(request: "Request") -> "Response":
+    """
+    Handler for webhook POST endpoint. Serves as starting point to analysing webhook event and
+    action to take on. NOT SUPPOSED TO BE INVOKED OUTSIDE OF AIOHTTP CONTEXT
     """
 
     event_dict = await request.json()
@@ -28,14 +50,49 @@ async def webhook_endpoint_handler(request: "Request") -> "Response":
         return Response(status=400, text="Invalid event")
 
     response_status = 400
-    response_text = "Don't know what to do with event"
 
     match event.message:
         case WebhookEventMessageTextModel():
             response_status = 200
-            response_text = f"You sent: {event.message.text}"
+            asyncio.create_task(
+                send_message(
+                    phone_number=event.phone_number,
+                    message=f"You sent: {event.message.text}",
+                )
+            )
 
-    return Response(status=response_status, text=response_text)
+    return Response(status=response_status)
+
+
+async def send_message(*, phone_number: str, message: str) -> None:
+    """
+    Send WhatsApp message using WhatsApp API
+
+    This function is invoked as second-leg to webhook event. NOT SUPPOSED TO BE INVOKED OUTSIDE OF
+    AIOHTTP CONTEXT
+    """
+    r = requests.post(
+        f"https://graph.facebook.com/v15.0/{os.getenv('WHATSAPP_APP_ID')}/messages",
+        headers={
+            "Authorization": f"Bearer {os.getenv('WHATSAPP_API_TOKEN')}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": phone_number,
+            "type": "text",
+            "text": {"body": message},
+        },
+        timeout=30,
+    )
+
+    if r.status_code != 200:
+        logging.warning(
+            "Request to send message failed with error code: %s, response: %s",
+            r.status_code,
+            r.text,
+        )
 
 
 class InvalidWebhookEvent(Exception):
@@ -55,8 +112,6 @@ class WebhookEventModel:
     """
 
     __event: dict[str, Any]
-    __phone_number: str
-    __phone_id: str
     __message: "WebhookEventMessageModel"
 
     @property
@@ -70,18 +125,11 @@ class WebhookEventModel:
     @property
     def phone_number(self) -> str:
         """
-        Phone number from where message was sent
+        Mirror `phone_number` from :class:`WebhookEventMessageModel`. Phone number which message
+        sent from
         """
 
-        return self.__phone_number
-
-    @property
-    def phone_id(self) -> str:
-        """
-        WhatsApp Phone UID from where message was sent
-        """
-
-        return self.__phone_id
+        return self.__message.phone_number
 
     @property
     def timestamp(self) -> str:
@@ -124,18 +172,6 @@ class WebhookEventModel:
                 f"Unknown 'messaging_product' '{messaging_product}'"
             )
 
-        # Extract end-user phone number, and unique WhatsApp-assigned ID
-        try:
-            self.__phone_number = entry["metadata"]["display_phone_number"]
-            self.__phone_id = entry["metadata"]["phone_number_id"]
-        except KeyError as e:
-            raise InvalidWebhookEventMessage(
-                (
-                    "Failed to extract 'metadata.display_phone_number' or "
-                    "'metadata.phone_number_id' values from 'message' dict"
-                )
-            ) from e
-
         # Extract and modelise message value messages[0]
         try:
             message = entry["messages"][0]
@@ -167,6 +203,13 @@ class WebhookEventMessageModel(ABC):
 
     @property
     @abstractmethod
+    def phone_number(self):
+        """
+        Phone number the message was sent from
+        """
+
+    @property
+    @abstractmethod
     def timestamp(self):
         """
         Timestamp at which message was sent
@@ -195,8 +238,13 @@ class WebhookEventMessageTextModel(WebhookEventMessageModel):
     :raises InvalidWebhookEventMessage: If failed for any reason
     """
 
+    __phone_number: str
     __text: str
     __timestamp: int
+
+    @property
+    def phone_number(self) -> str:
+        return self.__phone_number
 
     @property
     def text(self) -> str:
@@ -224,6 +272,7 @@ class WebhookEventMessageTextModel(WebhookEventMessageModel):
             )
 
         try:
+            self.__phone_number = message["from"]
             self.__timestamp = message["timestamp"]
             self.__text = message["text"]["body"]
         except KeyError as e:
