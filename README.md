@@ -11,8 +11,8 @@ Following serves as quick overview to project progress:
 - [x] WhatsApp API Webhook:
   - [x] User should be able to send message to chat bot.
   - [x] User should receive an echo to message he sent.
-- [ ] GPT-3 Integration:
-  - [ ] Rather than getting echo of the message, User should receive an answer as provided by GPT-3.
+- [x] GPT-3 Integration:
+  - [x] Rather than getting echo of the message, User should receive an answer as provided by GPT-3.
 - [ ] Realtime Data Integration:
   - [ ] Rather than getting responses compiled by GPT-3, User should receive an answer that reflect information bound to realtime data.
 - [ ] Messages Log:
