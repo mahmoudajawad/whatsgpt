@@ -8,6 +8,7 @@ events
 import logging
 import os
 
+import openai
 from aiohttp import web
 from dotenv import load_dotenv
 
@@ -18,6 +19,8 @@ from endpoints import (root_endpoint_handler, webhook_get_endpoint_handler,
 # - PORT: If set it will be converted into `int` type to use as port number. If conversion failed,
 #   it will be ignored. If not set or ignored, will default to 8080
 load_dotenv()
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 
 def serve():

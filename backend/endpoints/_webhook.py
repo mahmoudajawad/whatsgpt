@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
+import openai
 import requests
 from aiohttp.web import Response
 
@@ -57,7 +58,7 @@ async def webhook_post_endpoint_handler(request: "Request") -> "Response":
             asyncio.create_task(
                 send_message(
                     phone_number=event.phone_number,
-                    message=f"You sent: {event.message.text}",
+                    message=event.message.text,
                 )
             )
 
@@ -71,6 +72,17 @@ async def send_message(*, phone_number: str, message: str) -> None:
     This function is invoked as second-leg to webhook event. NOT SUPPOSED TO BE INVOKED OUTSIDE OF
     AIOHTTP CONTEXT
     """
+
+    answer = openai.Completion.create(
+        model="text-davinci-003",
+        prompt=message,
+        temperature=0,
+        max_tokens=100,
+        top_p=1,
+        frequency_penalty=0.0,
+        presence_penalty=0.0,
+    )
+
     r = requests.post(
         f"https://graph.facebook.com/v15.0/{os.getenv('WHATSAPP_APP_ID')}/messages",
         headers={
@@ -82,7 +94,7 @@ async def send_message(*, phone_number: str, message: str) -> None:
             "recipient_type": "individual",
             "to": phone_number,
             "type": "text",
-            "text": {"body": message},
+            "text": {"body": answer["choices"][0]["text"]},
         },
         timeout=30,
     )
