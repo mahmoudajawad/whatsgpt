@@ -12,17 +12,3 @@ services:
     ports:
       - ${PORT}:8080
     restart: always
-
-  # MongoDB
-  mongo:
-    image: "docker.io/library/mongo:6.0.3"
-    restart: always
-    container_name: mongo
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_volume:/data/db
-
-volumes:
-  # MongoDB Volumes
-  mongodb_volume:
