@@ -13,6 +13,8 @@ import openai
 import requests
 from aiohttp.web import Response
 
+from .sql_reporting_northwind import nl_to_sql
+
 if TYPE_CHECKING:
     from aiohttp.web import Request
 
@@ -73,15 +75,22 @@ async def send_message(*, phone_number: str, message: str) -> None:
     AIOHTTP CONTEXT
     """
 
-    answer = openai.Completion.create(
-        model="text-davinci-003",
-        prompt=message,
-        temperature=0,
-        max_tokens=100,
-        top_p=1,
-        frequency_penalty=0.0,
-        presence_penalty=0.0,
-    )
+    response_text = ""
+
+    if message.startswith("data: "):
+        result = await nl_to_sql(message.replace("data: ", ""))
+        response_text = f"{result}"
+    else:
+        answer = openai.Completion.create(
+            model="text-davinci-003",
+            prompt=message,
+            temperature=0,
+            max_tokens=100,
+            top_p=1,
+            frequency_penalty=0.0,
+            presence_penalty=0.0,
+        )
+        response_text = answer["choices"][0]["text"]
 
     r = requests.post(
         f"https://graph.facebook.com/v15.0/{os.getenv('WHATSAPP_APP_ID')}/messages",
@@ -94,7 +103,7 @@ async def send_message(*, phone_number: str, message: str) -> None:
             "recipient_type": "individual",
             "to": phone_number,
             "type": "text",
-            "text": {"body": answer["choices"][0]["text"]},
+            "text": {"body": response_text},
         },
         timeout=30,
     )
