@@ -2,12 +2,7 @@
 Endpoint '/'
 """
 
-from typing import TYPE_CHECKING
-
 from aiohttp.web import Response
-
-if TYPE_CHECKING:
-    from aiohttp.web import Request
 
 
 async def root_endpoint_handler(_):

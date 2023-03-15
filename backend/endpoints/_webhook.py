@@ -13,6 +13,7 @@ import openai
 import requests
 from aiohttp.web import Response
 
+from ._shared import MESSAGES
 from .sql_reporting_northwind import nl_to_sql
 
 if TYPE_CHECKING:
@@ -58,7 +59,7 @@ async def webhook_post_endpoint_handler(request: "Request") -> "Response":
         case WebhookEventMessageTextModel():
             response_status = 200
             asyncio.create_task(
-                send_message(
+                process_message(
                     phone_number=event.phone_number,
                     message=event.message.text,
                 )
@@ -67,30 +68,90 @@ async def webhook_post_endpoint_handler(request: "Request") -> "Response":
     return Response(status=response_status)
 
 
+async def process_message(*, phone_number: str, message: str) -> None:
+    """
+    Primitively process message against general or data query
+
+    This function is invoked as first act after receiving a message on event on webhook. A message
+    is data query if prefixed by "data: " or else a general query
+    """
+
+    if message.startswith("data: "):
+        asyncio.create_task(
+            process_message_data(phone_number=phone_number, message=message)
+        )
+        return
+
+    asyncio.create_task(
+        process_message_general(phone_number=phone_number, message=message)
+    )
+
+
+async def process_message_general(*, phone_number: str, message: str) -> None:
+    """
+    Send message to OpenAI API to generate general response
+
+    This function is invoked as second act of receiving a message of general query. Message is
+    prefixed with last 9 messages sent from same phone number in order to generate contextual
+    response
+    """
+
+    if phone_number not in MESSAGES:
+        MESSAGES[phone_number] = []
+
+    answer = openai.Completion.create(
+        model="text-davinci-003",
+        prompt="\n".join(list(reversed(MESSAGES[phone_number]))[:10])
+        + f"\nQ: {message}\nA: ",
+        temperature=0,
+        max_tokens=100,
+        top_p=1,
+        frequency_penalty=0.0,
+        presence_penalty=0.0,
+    )
+    response_text = answer["choices"][0]["text"]
+
+    MESSAGES[phone_number].append(f"Q: {message}\nA: {response_text}")
+
+    asyncio.create_task(send_message(phone_number=phone_number, message=response_text))
+
+
+async def process_message_data(*, phone_number: str, message: str) -> None:
+    """
+    Send message to OpenAI API to format SQL query out of natural-language text and execute it
+    against Database
+
+    This function is invoked as second act of receiving a message of data query.
+    """
+
+    result = await nl_to_sql(message.replace("data: ", ""))
+    asyncio.create_task(send_message(phone_number=phone_number, message=f"{result}"))
+
+
 async def send_message(*, phone_number: str, message: str) -> None:
+    """
+    Report response of received message to runtime Output
+
+    If runtime Output (Set with env variable `OUTPUT`) is set to `WHATSAPP`,
+    :func:`send_message_whatsapp` will be invoked, else response will be logged to `stdout`
+    """
+
+    if os.getenv("OUTPUT") == "WHATSAPP":
+        asyncio.create_task(
+            send_message_whatsapp(phone_number=phone_number, message=message)
+        )
+        return
+
+    logging.info("Response to message from '%s' is: %s", phone_number, message)
+
+
+async def send_message_whatsapp(*, phone_number: str, message: str) -> None:
     """
     Send WhatsApp message using WhatsApp API
 
-    This function is invoked as second-leg to webhook event. NOT SUPPOSED TO BE INVOKED OUTSIDE OF
-    AIOHTTP CONTEXT
+    This function is invoked as as final act of processing a message should Backend be set to Output
+    to WhatsApp
     """
-
-    response_text = ""
-
-    if message.startswith("data: "):
-        result = await nl_to_sql(message.replace("data: ", ""))
-        response_text = f"{result}"
-    else:
-        answer = openai.Completion.create(
-            model="text-davinci-003",
-            prompt=message,
-            temperature=0,
-            max_tokens=100,
-            top_p=1,
-            frequency_penalty=0.0,
-            presence_penalty=0.0,
-        )
-        response_text = answer["choices"][0]["text"]
 
     r = requests.post(
         f"https://graph.facebook.com/v15.0/{os.getenv('WHATSAPP_APP_ID')}/messages",
@@ -103,7 +164,8 @@ async def send_message(*, phone_number: str, message: str) -> None:
             "recipient_type": "individual",
             "to": phone_number,
             "type": "text",
-            "text": {"body": response_text},
+            # Slice the message to satisfy max of 4096 set by WhatsApp API
+            "text": {"body": message[:4095]},
         },
         timeout=30,
     )
