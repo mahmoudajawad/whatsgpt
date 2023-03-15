@@ -12,7 +12,8 @@ import openai
 from aiohttp import web
 from dotenv import load_dotenv
 
-from endpoints import (root_endpoint_handler, webhook_get_endpoint_handler,
+from endpoints import (messages_endpoint_handler, root_endpoint_handler,
+                       webhook_get_endpoint_handler,
                        webhook_post_endpoint_handler)
 
 # Backend expects following env variables:
@@ -50,6 +51,7 @@ def serve():
             web.get("/", root_endpoint_handler),
             web.get("/webhook", webhook_get_endpoint_handler),
             web.post("/webhook", webhook_post_endpoint_handler),
+            web.get("/messages/{phone}", messages_endpoint_handler),
         ]
     )
     web.run_app(app, port=port)
