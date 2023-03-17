@@ -3,6 +3,7 @@ Endpoint '/webhook' handler and associated classes
 """
 
 import asyncio
+import json
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -13,7 +14,7 @@ import openai
 import requests
 from aiohttp.web import Response
 
-from ._shared import MESSAGES
+from ._shared import JSON_PROMPT, MENU, MESSAGES, SYSTEM_PROMPT
 from .sql_reporting_northwind import nl_to_sql
 
 if TYPE_CHECKING:
@@ -99,21 +100,64 @@ async def process_message_general(*, phone_number: str, message: str) -> None:
     if phone_number not in MESSAGES:
         MESSAGES[phone_number] = []
 
-    answer = openai.Completion.create(
-        model="text-davinci-003",
-        prompt="\n".join(list(reversed(MESSAGES[phone_number]))[:10])
-        + f"\nQ: {message}\nA: ",
-        temperature=0,
-        max_tokens=100,
-        top_p=1,
-        frequency_penalty=0.0,
-        presence_penalty=0.0,
-    )
-    response_text = answer["choices"][0]["text"]
+    if phone_number not in MENU:
+        MENU[phone_number] = []
 
-    MESSAGES[phone_number].append(f"Q: {message}\nA: {response_text}")
+    MESSAGES[phone_number].append({"role": "user", "content": message})
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": "Current menu is, note that prices are in cents and preparation time is in minutes: "
+            + json.dumps(MENU[phone_number]),
+        },
+    ] + MESSAGES[phone_number][-10:]
+
+    answer = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=messages,
+    )
+    response_text = answer["choices"][0]["message"]["content"]
+
+    MESSAGES[phone_number].append({"role": "assistant", "content": response_text})
 
     asyncio.create_task(send_message(phone_number=phone_number, message=response_text))
+
+    # Find catch words
+    if "item is being created" in response_text.lower():
+        # Find out item info:
+        answer = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages + [{"role": "user", "content": JSON_PROMPT}],
+        )
+        response_text = answer["choices"][0]["message"]["content"]
+        item = json.loads(response_text.split("```")[1])
+        MENU[phone_number].append(item)
+        MESSAGES[phone_number].append(
+            {"role": "assistant", "content": "Item has been created."}
+        )
+        asyncio.create_task(
+            send_message(phone_number=phone_number, message="Item has been created.")
+        )
+        return
+
+    if "fetching menu items" in response_text.lower():
+        MESSAGES[phone_number].append(
+            {
+                "role": "assistant",
+                "content": "Here are your menu items, JSON formatted: "
+                + json.dumps(MENU[phone_number]),
+            }
+        )
+        asyncio.create_task(
+            send_message(
+                phone_number=phone_number,
+                message="Here are your menu items, JSON formatted: "
+                + json.dumps(MENU[phone_number]),
+            )
+        )
+        return
 
 
 async def process_message_data(*, phone_number: str, message: str) -> None:
