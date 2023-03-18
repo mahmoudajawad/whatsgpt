@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,8 @@ from .sql_reporting_northwind import nl_to_sql
 
 if TYPE_CHECKING:
     from aiohttp.web import Request
+
+    from ._shared import Message
 
 
 async def webhook_get_endpoint_handler(request: "Request") -> "Response":
@@ -83,12 +86,14 @@ async def process_message(*, phone_number: str, message: str) -> None:
         )
         return
 
-    asyncio.create_task(
-        process_message_general(phone_number=phone_number, message=message)
+    thread = threading.Thread(
+        target=process_message_general,
+        kwargs={"phone_number": phone_number, "message": message},
     )
+    thread.start()
 
 
-async def process_message_general(*, phone_number: str, message: str) -> None:
+def process_message_general(*, phone_number: str, message: str) -> None:
     """
     Send message to OpenAI API to generate general response
 
@@ -105,59 +110,79 @@ async def process_message_general(*, phone_number: str, message: str) -> None:
 
     MESSAGES[phone_number].append({"role": "user", "content": message})
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": "Current menu is, note that prices are in cents and preparation time is in minutes: "
-            + json.dumps(MENU[phone_number]),
-        },
-    ] + MESSAGES[phone_number][-10:]
-
-    answer = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=messages,
-    )
-    response_text = answer["choices"][0]["message"]["content"]
-
-    MESSAGES[phone_number].append({"role": "assistant", "content": response_text})
-
-    asyncio.create_task(send_message(phone_number=phone_number, message=response_text))
-
-    # Find catch words
-    if "item is being created" in response_text.lower():
-        # Find out item info:
+    def complete_gpt(messages: list["Message"]):
         answer = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=messages + [{"role": "user", "content": JSON_PROMPT}],
+            model="gpt-4",
+            messages=messages,
         )
         response_text = answer["choices"][0]["message"]["content"]
-        item = json.loads(response_text.split("```")[1])
-        MENU[phone_number].append(item)
-        MESSAGES[phone_number].append(
-            {"role": "assistant", "content": "Item has been created."}
-        )
-        asyncio.create_task(
-            send_message(phone_number=phone_number, message="Item has been created.")
-        )
-        return
 
-    if "fetching menu items" in response_text.lower():
-        MESSAGES[phone_number].append(
-            {
-                "role": "assistant",
-                "content": "Here are your menu items, JSON formatted: "
-                + json.dumps(MENU[phone_number]),
-            }
+        MESSAGES[phone_number].append({"role": "assistant", "content": response_text})
+
+        thread = threading.Thread(
+            target=send_message,
+            kwargs={"phone_number": phone_number, "message": response_text},
         )
-        asyncio.create_task(
-            send_message(
-                phone_number=phone_number,
-                message="Here are your menu items, JSON formatted: "
-                + json.dumps(MENU[phone_number]),
+        thread.start()
+
+        # Find catch words
+        if "item is being created" in response_text.lower():
+            # Find out item info:
+            answer = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=messages + [{"role": "user", "content": JSON_PROMPT}],
             )
-        )
-        return
+            response_text = answer["choices"][0]["message"]["content"]
+            json_str = response_text.split("```")[1]
+            if json_str.startswith("json"):
+                json_str = json_str.replace("json", "", 1)
+            item = json.loads(json_str)
+            MENU[phone_number].append(item)
+            MESSAGES[phone_number].append(
+                {"role": "assistant", "content": "Item has been created."}
+            )
+            thread = threading.Thread(
+                target=send_message,
+                kwargs={
+                    "phone_number": phone_number,
+                    "message": "Item has been created.",
+                },
+            )
+            thread.start()
+            return
+
+        if "fetching menu items" in response_text.lower():
+            MESSAGES[phone_number].append(
+                {
+                    "role": "assistant",
+                    "content": "Here are your menu items, JSON formatted: "
+                    + json.dumps(MENU[phone_number]),
+                }
+            )
+            asyncio.create_task(
+                send_message(
+                    phone_number=phone_number,
+                    message="Here are your menu items, JSON formatted: "
+                    + json.dumps(MENU[phone_number]),
+                )
+            )
+            return
+
+    thread = threading.Thread(
+        target=complete_gpt,
+        kwargs={
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": "Current menu is, note that prices are in cents and preparation time is in minutes: "
+                    + json.dumps(MENU[phone_number]),
+                },
+            ]
+            + MESSAGES[phone_number][-10:]
+        },
+    )
+    thread.start()
 
 
 async def process_message_data(*, phone_number: str, message: str) -> None:
@@ -172,7 +197,7 @@ async def process_message_data(*, phone_number: str, message: str) -> None:
     asyncio.create_task(send_message(phone_number=phone_number, message=f"{result}"))
 
 
-async def send_message(*, phone_number: str, message: str) -> None:
+def send_message(*, phone_number: str, message: str) -> None:
     """
     Report response of received message to runtime Output
 
@@ -181,15 +206,17 @@ async def send_message(*, phone_number: str, message: str) -> None:
     """
 
     if os.getenv("OUTPUT") == "WHATSAPP":
-        asyncio.create_task(
-            send_message_whatsapp(phone_number=phone_number, message=message)
+        thread = threading.Thread(
+            target=send_message_whatsapp,
+            kwargs={"phone_number": phone_number, "message": message},
         )
+        thread.start()
         return
 
     logging.info("Response to message from '%s' is: %s", phone_number, message)
 
 
-async def send_message_whatsapp(*, phone_number: str, message: str) -> None:
+def send_message_whatsapp(*, phone_number: str, message: str) -> None:
     """
     Send WhatsApp message using WhatsApp API
 
