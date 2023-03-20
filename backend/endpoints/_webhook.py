@@ -14,14 +14,21 @@ from typing import TYPE_CHECKING, Any
 import openai
 import requests
 from aiohttp.web import Response
+from openai.embeddings_utils import cosine_similarity
 
-from ._shared import JSON_PROMPT, MENU, MESSAGES, SYSTEM_PROMPT
+from ._shared import (ITEM_CREATE_VICTOR, JSON_PROMPT, MENU, MESSAGES,
+                      SYSTEM_PROMPT)
 from .sql_reporting_northwind import nl_to_sql
 
 if TYPE_CHECKING:
     from aiohttp.web import Request
 
     from ._shared import Message
+
+
+def get_embedding(text):
+    result = openai.Embedding.create(model="text-embedding-ada-002", input=text)
+    return result["data"][0]["embedding"]
 
 
 async def webhook_get_endpoint_handler(request: "Request") -> "Response":
@@ -126,7 +133,7 @@ def process_message_general(*, phone_number: str, message: str) -> None:
         thread.start()
 
         # Find catch words
-        if "item is being created" in response_text.lower():
+        if cosine_similarity(ITEM_CREATE_VICTOR, get_embedding(response_text)) > 0.85:
             # Find out item info:
             answer = openai.ChatCompletion.create(
                 model="gpt-4",
